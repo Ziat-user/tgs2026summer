@@ -21,6 +21,7 @@
 
 
 [bg  storage="Image.jpg"  ]
+[tb_image_show  time="0"  storage="default/title.png"  width="408"  height="272"  x="477"  y="78"  _clickable_img=""  ]
 *title
 
 [glink  color="black"  text="はじめから"  x="75"  y="370"  size="20"  target="*start"  ]
@@ -36,7 +37,8 @@
 
 [cm  ]
 [tb_keyconfig  flag="1"  ]
-[jump  storage="scene1.ks"  target=""  ]
+[tb_image_hide  time="0"  ]
+[jump  storage="opening.ks"  target=""  ]
 [s  ]
 
 ;--------ロードが押された時の処理
@@ -47,5 +49,5 @@
 [cm  ]
 [showload]
 
-[jump  target="*title"  storage="scene1.ks"  ]
+[jump  target="*title"  storage="opening.ks"  ]
 [s  ]

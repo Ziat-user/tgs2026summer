@@ -1,7 +1,5 @@
-[_tb_system_call storage=system/_preview.ks ]
+[_tb_system_call storage=system/_result_success.ks]
 
-[mask time=10]
-[mask_off time=10]
 [bg  time="1000"  method="crossfade"  storage="success.jpg"  ]
 [playbgm  volume="100"  time="1000"  loop="true"  storage="success_2.mp3"  ]
 [chara_show  name="ちょうろう"  time="1000"  wait="true"  storage="chara/1/choro_hige.png"  width="519"  height="659"  left="undefined"  ]
