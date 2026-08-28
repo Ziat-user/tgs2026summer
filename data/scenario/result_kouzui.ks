@@ -1,7 +1,7 @@
 [_tb_system_call storage=system/_result_kouzui.ks]
 
 [bg  time="1000"  method="crossfade"  storage="kouzui.jpg"  ]
-[playbgm  volume="100"  time="1000"  loop="true"  ]
+[playbgm  volume="100"  time="1000"  loop="true"  storage="kouzui_2.mp3"  ]
 [chara_show  name="ちょうろう"  time="1000"  wait="true"  storage="chara/1/choro_hige.png"  width="519"  height="659"  ]
 [tb_show_message_window  ]
 [tb_start_text mode=1 ]
@@ -113,4 +113,5 @@
 『雨ごい、大成功』[p]
 [_tb_end_text]
 
+[chara_hide  name="ちょうろう"  time="1000"  wait="true"  pos_mode="true"  ]
 [jump  storage="title_screen.ks"  target=""  ]

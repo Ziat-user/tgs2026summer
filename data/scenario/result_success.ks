@@ -56,5 +56,5 @@
 降り続く雨の音が、祝福の拍手のように響いていた。[p]
 [_tb_end_text]
 
+[chara_hide  name="ちょうろう"  time="1000"  wait="true"  pos_mode="true"  ]
 [jump  storage="title_screen.ks"  target=""  ]
-[s  ]

@@ -15,7 +15,7 @@
 
 #長老
 本当に困りましたな[p]
-# 
+#
 長老はしばらく考え込む。[p]
 
 そしてぽんと手を叩いた。[p]
@@ -40,4 +40,5 @@
 捕まえろー！[p]
 [_tb_end_text]
 
+[chara_hide  name="ちょうろう"  time="1000"  wait="true"  pos_mode="true"  ]
 [jump  storage="title_screen.ks"  target=""  ]
