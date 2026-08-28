@@ -1,11 +1,17 @@
 /* =============================================================
-   TyranoSimpleRhythm - rhythm.js  v3
+   TyranoSimpleRhythm - rhythm.js  v4
    配置先: data/others/rhythm.js
 
-   v3 変更点:
-     - makeChart() が window._TSR_CHART (chart.js) を優先使用
-     - beat 指定 / ms 指定の両対応
-     - _TSR_CHART が未定義の場合は従来の自動生成にフォールバック
+   v4 変更点:
+     - SE システム追加
+         ファイル指定: CONFIG.sePerfect / seGood / seMiss /
+                       seEmpty / sePause / seResume /
+                       seFullcombo / seAllperfect
+         未指定時    : Web Audio API 合成音をデフォルト再生
+         音量共通制御: CONFIG.seVolume (0.0〜1.0, 既定 0.8)
+     - フルコンボ / AP 時のファンファーレ SE 追加
+     - QUIT 終了時はフルコンボ SE を鳴らさない (quitEarly フラグ)
+     - audioCtx を enableMetronome 非依存で常時生成
    ============================================================= */
 (function () {
     "use strict";
@@ -24,8 +30,8 @@
         keyLabels:       ["D", "F", "J", "K"],
         noteColors:      ["#ff5c8a", "#56c8ff", "#ffd45c", "#9c7cff"],
         bpm:             120,
-        beatCount:       48,   /* 自動生成モードのみ使用 */
-        beatsPerNote:    1,    /* 自動生成モードのみ使用 */
+        beatCount:       48,
+        beatsPerNote:    1,
         approachMs:      1800,
         judgeYPercent:   82,
         perfectMs:       80,
@@ -40,7 +46,19 @@
         musicLoop:       true,
         bgImage:         "",
         returnStorage:   "",
-        returnTarget:    "*rhythm_after"
+        returnTarget:    "*rhythm_after",
+        /* ── SE 設定 (v4 新設) ──────────────────────────────────
+           各項目にファイルパスを指定すると優先再生。
+           空文字のままにすると Web Audio 合成音を使用。      */
+        seVolume:        0.8,   /* SE 全体音量 0.0〜1.0        */
+        sePerfect:       "",    /* 例: "data/sound/se_pf.ogg"  */
+        seGood:          "",    /* 例: "data/sound/se_gd.ogg"  */
+        seMiss:          "",    /* 例: "data/sound/se_ms.ogg"  */
+        seEmpty:         "",    /* 例: "data/sound/se_em.ogg"  */
+        sePause:         "",    /* 例: "data/sound/se_pa.ogg"  */
+        seResume:        "",    /* 例: "data/sound/se_re.ogg"  */
+        seFullcombo:     "",    /* 例: "data/sound/se_fc.ogg"  */
+        seAllperfect:    ""     /* 例: "data/sound/se_ap.ogg"  */
     };
 
     var overrides = window._TSR_CONFIG || {};
@@ -81,6 +99,138 @@
     function pauseMusic()  { if (audioEl) { audioEl.pause(); } }
     function resumeMusic() { if (audioEl) { audioEl.play().catch(function () {}); } }
     function stopMusic()   { if (audioEl) { audioEl.pause(); audioEl.currentTime = 0; } }
+
+    /* ═══════════════════════════════════════════════════════════
+       SE システム
+
+       優先順位:
+         1. CONFIG.seXxx にファイルパスが設定されている → HTMLAudio 再生
+         2. 未設定または読み込み失敗             → Web Audio 合成音
+
+       SE パスマップ (プロパティ名 → CONFIG キー)
+    ════════════════════════════════════════════════════════════ */
+    var seVol = Math.min(1, Math.max(0, parseFloat(CONFIG.seVolume) || 0.8));
+
+    /* SE ファイルパスをまとめたマップ */
+    var sePathMap = {
+        perfect:    String(CONFIG.sePerfect    || ""),
+        good:       String(CONFIG.seGood       || ""),
+        miss:       String(CONFIG.seMiss       || ""),
+        empty:      String(CONFIG.seEmpty      || ""),
+        pause:      String(CONFIG.sePause      || ""),
+        resume:     String(CONFIG.seResume     || ""),
+        fullcombo:  String(CONFIG.seFullcombo  || ""),
+        allperfect: String(CONFIG.seAllperfect || "")
+    };
+
+    /* SE ファイルを事前ロード */
+    var seAudioCache = {};
+    (function () {
+        var types = ["perfect", "good", "miss", "empty", "pause", "resume", "fullcombo", "allperfect"];
+        for (var i = 0; i < types.length; i++) {
+            var path = sePathMap[types[i]];
+            if (path && !seAudioCache[path]) {
+                var el = document.createElement("audio");
+                el.src = path; el.preload = "auto"; el.load();
+                seAudioCache[path] = el;
+            }
+        }
+    }());
+
+    /* ── ファイル SE 再生 ─── */
+    function playFileSE(path) {
+        if (!path || !seAudioCache[path]) return false;
+        /* cloneNode で重複再生に対応 */
+        var clone = seAudioCache[path].cloneNode();
+        clone.volume = seVol;
+        clone.play().catch(function () {});
+        return true;
+    }
+
+    /* ── Web Audio 合成ヘルパー ─── */
+    var audioCtx = null;   /* start() で初期化。ここでは null */
+
+    /* 単音を合成して再生 */
+    function synthTone(freq, startOffset, dur, oscType, vol) {
+        if (!audioCtx || audioCtx.state === "closed") return;
+        var t   = audioCtx.currentTime + startOffset;
+        var osc = audioCtx.createOscillator();
+        var g   = audioCtx.createGain();
+        osc.type            = oscType || "sine";
+        osc.frequency.value = freq;
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(vol * seVol, t + 0.010);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.start(t); osc.stop(t + dur + 0.025);
+    }
+
+    /* ── デフォルト合成音の定義 ─── */
+    /*
+       PERFECT  : 高め2音の上昇ダブルトーン (C6→E6)
+       GOOD     : 中音単音 (G5)
+       MISS     : のこぎり波の下降スウィープ
+       EMPTY    : 非常に小さいソフトクリック
+       PAUSE    : 下降2音 (E5→C5)
+       RESUME   : 上昇2音 (C5→E5)
+       FULLCOMBO: C5→E5→G5→C6 の4音アルペジオ
+       ALLPERFECT: C5→E5→G5→C6→E6 の5音ファンファーレ (triangle)
+    */
+    var SE_SYNTH = {
+        perfect: function () {
+            synthTone(1046.5, 0,    0.13, "sine",     0.28);
+            synthTone(1318.5, 0.07, 0.13, "sine",     0.28);
+        },
+        good: function () {
+            synthTone(784, 0, 0.15, "sine", 0.24);
+        },
+        miss: function () {
+            if (!audioCtx || audioCtx.state === "closed") return;
+            var t   = audioCtx.currentTime;
+            var osc = audioCtx.createOscillator();
+            var g   = audioCtx.createGain();
+            osc.type = "sawtooth";
+            osc.frequency.setValueAtTime(180, t);
+            osc.frequency.exponentialRampToValueAtTime(50, t + 0.20);
+            g.gain.setValueAtTime(0.20 * seVol, t);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+            osc.connect(g); g.connect(audioCtx.destination);
+            osc.start(t); osc.stop(t + 0.25);
+        },
+        empty: function () {
+            synthTone(300, 0, 0.04, "sine", 0.06);
+        },
+        pause: function () {
+            synthTone(659, 0,    0.09, "sine", 0.18);
+            synthTone(523, 0.08, 0.09, "sine", 0.18);
+        },
+        resume: function () {
+            synthTone(523, 0,    0.09, "sine", 0.18);
+            synthTone(659, 0.08, 0.09, "sine", 0.20);
+        },
+        fullcombo: function () {
+            /* C5→E5→G5→C6 */
+            var seq = [523.25, 659.25, 783.99, 1046.50];
+            for (var i = 0; i < seq.length; i++) {
+                synthTone(seq[i], i * 0.085, 0.18, "sine", 0.30);
+            }
+        },
+        allperfect: function () {
+            /* C5→E5→G5→C6→E6 (triangle で倍音を含む明るい音) */
+            var seq = [523.25, 659.25, 783.99, 1046.50, 1318.51];
+            for (var i = 0; i < seq.length; i++) {
+                synthTone(seq[i], i * 0.075, 0.22, "triangle", 0.33);
+            }
+        }
+    };
+
+    /* ── SE 再生エントリーポイント ─── */
+    function playSE(type) {
+        var path = sePathMap[type] || "";
+        /* ファイル再生を試みて失敗したら合成音 */
+        if (path && playFileSE(path)) return;
+        if (SE_SYNTH[type]) SE_SYNTH[type]();
+    }
 
     /* ─── DOM 構築 ───────────────────────────────────────────── */
     var root = document.createElement("div");
@@ -128,18 +278,19 @@
     });
 
     var notes = [], running = false, paused = false, destroyed = false, returning = false;
+    var quitEarly = false;   /* QUIT ボタンで終了した場合 true → ファンファーレなし */
     var startTime = 0, pausedAt = 0;
     var animationId = 0, score = 0, combo = 0, maxCombo = 0;
-    var perfect = 0, good = 0, miss = 0, audioCtx = null, nextClickBeat = 0;
+    var perfect = 0, good = 0, miss = 0, nextClickBeat = 0;
     var judgeAnimation = null;
-    var totalDuration = 0;   /* makeChart() 後に確定 */
+    var totalDuration = 0;
 
     function later(fn, ms) {
         var id = window.setTimeout(function () { timeouts.delete(id); fn(); }, ms);
         timeouts.add(id); return id;
     }
 
-    /* ─── 判定 ───────────────────────────────────────────────── */
+    /* ─── 判定処理 ───────────────────────────────────────────── */
     function hitLane(index) {
         if (!running || paused || destroyed) return;
         var lane = lanes[index];
@@ -156,7 +307,9 @@
             if (diff < smallest) { smallest = diff; target = n; }
         }
         if (!target || smallest > CONFIG.missMs) {
-            combo = 0; updateHud(); showJudge("EMPTY", "#aaa"); return;
+            combo = 0; updateHud(); showJudge("EMPTY", "#aaa");
+            playSE("empty");   /* ← EMPTY SE */
+            return;
         }
         applyJudge(target, smallest <= CONFIG.perfectMs ? "PERFECT" : "GOOD");
     }
@@ -189,52 +342,33 @@
     }
     window.addEventListener("keydown", keydown, { passive: false, capture: true });
 
-    /* ═══════════════════════════════════════════════════════════
-       makeChart()
-       優先順位:
-         1. window._TSR_CHART (chart.js で定義した手動配置)
-         2. 自動生成 (従来のアルゴリズム、_TSR_CHART が空の場合)
-
-       _TSR_CHART の各エントリ:
-         { lane: <number>, beat: <number> }  ← beat 指定
-         { lane: <number>, ms:   <number> }  ← ms 直接指定
-    ════════════════════════════════════════════════════════════ */
+    /* ─── 譜面生成 ───────────────────────────────────────────── */
     function makeChart() {
         var rawChart = window._TSR_CHART;
 
-        /* ── 手動配置モード ── */
+        /* 手動配置モード */
         if (rawChart && rawChart.length > 0) {
             var chart = [];
             for (var _i = 0; _i < rawChart.length; _i++) {
                 var entry = rawChart[_i];
                 var lane  = Math.floor(Math.abs(Number(entry.lane) || 0)) % CONFIG.laneCount;
-
-                /* beat 指定 → ms に変換。ms 直接指定はそのまま使用 */
                 var time;
                 if (entry.beat !== undefined && entry.beat !== null) {
                     time = CONFIG.countdownMs + Number(entry.beat) * beatMs;
                 } else if (entry.ms !== undefined && entry.ms !== null) {
                     time = CONFIG.countdownMs + Number(entry.ms);
-                } else {
-                    continue;   /* beat も ms も無いエントリはスキップ */
-                }
-
+                } else { continue; }
                 chart.push({ lane: lane, time: time });
             }
-
-            /* 時刻順にソート (chart.js の記述順が前後していても正しく動く) */
             chart.sort(function (a, b) { return a.time - b.time; });
-
-            /* totalDuration を最後のノーツ時刻から算出 */
-            if (chart.length > 0) {
-                totalDuration = chart[chart.length - 1].time - CONFIG.countdownMs + beatMs * 4;
-            }
+            totalDuration = chart.length > 0
+                ? chart[chart.length - 1].time - CONFIG.countdownMs + beatMs * 4
+                : 0;
             return chart;
         }
 
-        /* ── 自動生成モード (フォールバック) ── */
-        var autoChart = [];
-        var autoLane  = 0;
+        /* 自動生成モード (フォールバック) */
+        var autoChart = [], autoLane = 0;
         for (var beat = 0; beat < CONFIG.beatCount; beat += CONFIG.beatsPerNote) {
             autoLane = (autoLane + ((Math.round(beat / CONFIG.beatsPerNote) % 7 === 6) ? 2 : 1)) % CONFIG.laneCount;
             autoChart.push({ lane: autoLane, time: CONFIG.countdownMs + beat * beatMs });
@@ -287,9 +421,19 @@
         if (!note || note.judged) return;
         note.judged = true;
         if (note.el) note.el.remove();
-        if      (type === "PERFECT") { perfect++; combo++; score += CONFIG.scorePerfect; showJudge(type, "#ffe66d"); }
-        else if (type === "GOOD")    { good++;    combo++; score += CONFIG.scoreGood;    showJudge(type, "#65d8ff"); }
-        else                         { miss++;    combo = 0;                              showJudge("MISS", "#ff6688"); }
+        if (type === "PERFECT") {
+            perfect++; combo++; score += CONFIG.scorePerfect;
+            showJudge(type, "#ffe66d");
+            playSE("perfect");   /* ← PERFECT SE */
+        } else if (type === "GOOD") {
+            good++; combo++; score += CONFIG.scoreGood;
+            showJudge(type, "#65d8ff");
+            playSE("good");      /* ← GOOD SE */
+        } else {
+            miss++; combo = 0;
+            showJudge("MISS", "#ff6688");
+            playSE("miss");      /* ← MISS SE */
+        }
         maxCombo = Math.max(maxCombo, combo);
         updateHud();
     }
@@ -307,14 +451,13 @@
     }
 
     /* ─── メインループ ───────────────────────────────────────── */
-    /* メトロノーム用に直近ノーツ時刻を使う */
     var metronomeBeats = [];
     function buildMetronomeBeats() {
         metronomeBeats = [];
-        var beatIdx = 0;
-        while (CONFIG.countdownMs + beatIdx * beatMs < CONFIG.countdownMs + totalDuration + 500) {
-            metronomeBeats.push(CONFIG.countdownMs + beatIdx * beatMs);
-            beatIdx++;
+        var idx = 0;
+        while (CONFIG.countdownMs + idx * beatMs < CONFIG.countdownMs + totalDuration + 500) {
+            metronomeBeats.push(CONFIG.countdownMs + idx * beatMs);
+            idx++;
         }
     }
 
@@ -325,10 +468,8 @@
         var startY = -CONFIG.noteHeight - 10;
 
         while (nextClickBeat < metronomeBeats.length && now >= metronomeBeats[nextClickBeat]) {
-            clickSound(nextClickBeat % 4 === 0);
-            nextClickBeat++;
+            clickSound(nextClickBeat % 4 === 0); nextClickBeat++;
         }
-
         for (var _i = 0; _i < notes.length; _i++) {
             var note = notes[_i];
             if (note.judged) continue;
@@ -336,7 +477,6 @@
             note.el.style.transform = "translateY(" + (startY + (judgeY - startY) * progress) + "px)";
             if (now - note.time > CONFIG.missMs) applyJudge(note, "MISS");
         }
-
         if (now > CONFIG.countdownMs + totalDuration + CONFIG.missMs + 500) { finish(); return; }
         animationId = requestAnimationFrame(frame);
     }
@@ -348,12 +488,15 @@
         cancelAnimationFrame(animationId);
         pauseMusic();
         pauseOverlay.style.display = "flex";
+        playSE("pause");   /* ← PAUSE SE */
     }
+
     function doResume() {
         if (!running || !paused || destroyed) return;
         paused    = false;
         startTime += performance.now() - pausedAt;
         pauseOverlay.style.display = "none";
+        playSE("resume");  /* ← RESUME SE */
         resumeMusic();
         animationId = requestAnimationFrame(frame);
     }
@@ -362,14 +505,16 @@
     function start() {
         if (running || destroyed) return;
         var AC = window.AudioContext || window.webkitAudioContext;
-        if (CONFIG.enableMetronome && AC && (!audioCtx || audioCtx.state === "closed")) audioCtx = new AC();
+        /* SE 合成音のために enableMetronome に依らず常時生成 */
+        if (AC && (!audioCtx || audioCtx.state === "closed")) {
+            audioCtx = new AC();
+        }
         if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(function () {});
 
         score = combo = maxCombo = perfect = good = miss = nextClickBeat = 0;
+        quitEarly = false;
         updateHud();
-        createNotes();           /* makeChart() → totalDuration も確定 */
-        buildMetronomeBeats();   /* totalDuration 確定後に呼ぶ */
-
+        createNotes(); buildMetronomeBeats();
         overlay.style.display      = "none";
         pauseOverlay.style.display = "none";
         hudBtns.style.display      = "flex";
@@ -405,6 +550,17 @@
         var rate     = maxScore ? Math.round(score / maxScore * 100) : 0;
         saveResult(rate);
 
+        /* ── ファンファーレ SE ──────────────────────────────────
+           QUIT で終了した場合 (quitEarly) は鳴らさない。
+           自然にクリアした場合のみ遅延再生。                  */
+        if (!quitEarly) {
+            if (miss === 0 && good === 0) {
+                later(function () { playSE("allperfect"); }, 350);
+            } else if (miss === 0) {
+                later(function () { playSE("fullcombo");  }, 350);
+            }
+        }
+
         var bonusText = "";
         if (miss === 0 && good === 0) bonusText = "<br><b style=\"color:#ffe66d\">ALL PERFECT!!</b>";
         else if (miss === 0)          bonusText = "<br><b style=\"color:#65d8ff\">FULL COMBO!</b>";
@@ -429,6 +585,10 @@
         timeouts.forEach(function (id) { clearTimeout(id); }); timeouts.clear();
         clearNotes(); stopMusic();
         if (audioEl) { audioEl.src = ""; audioEl = null; }
+        /* SE キャッシュ解放 */
+        for (var p in seAudioCache) {
+            if (seAudioCache[p]) { seAudioCache[p].src = ""; }
+        }
         if (judgeAnimation) { try { judgeAnimation.cancel(); } catch (_) {} judgeAnimation = null; }
         var closePromise = (audioCtx && audioCtx.state !== "closed")
             ? audioCtx.close().catch(function () {}) : Promise.resolve();
@@ -476,6 +636,7 @@
     root.querySelector("#tsr-resume-btn").onclick = doResume;
     root.querySelector("#tsr-quit-btn").onclick   = function () {
         if (!running) return;
+        quitEarly = true;          /* ファンファーレを鳴らさない */
         paused = false; pauseOverlay.style.display = "none"; finish();
     };
 

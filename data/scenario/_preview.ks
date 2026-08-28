@@ -4,7 +4,7 @@
 [mask_off time=10]
 [iscript]
 /* ============================================================
-   TyranoSimpleRhythm v3 - iscript コンポーネント用エントリーポイント
+   TyranoSimpleRhythm v4 - iscript コンポーネント用エントリーポイント
 
    このファイルの内容をそのまま iscript コンポーネントに貼る。
    【重要】このファイルに [ ] バッククォート 日本語コードを
@@ -20,10 +20,21 @@
     kag.stat.is_stop = true;
     window._TSR_KAG = kag;
 
-    /* ── ゲーム設定 ─────────────────────────────────────────
-       keys / keyLabels / noteColors など配列設定は
-       rhythm.js のデフォルト値を使用。
-       変更したい場合は rhythm.js の CONFIG を直接編集する。
+    /* ────────────────────────────────────────────────────────
+       ゲーム設定
+       ── SE 設定 (v4 新設) ────────────────────────────────
+         seVolume     : SE 全体音量 0.0〜1.0 (既定 0.8)
+         sePerfect    : PERFECT 判定 SE ファイルパス
+         seGood       : GOOD 判定 SE ファイルパス
+         seMiss       : MISS 判定 SE ファイルパス
+         seEmpty      : 空振り SE ファイルパス
+         sePause      : ポーズ SE ファイルパス
+         seResume     : 再開 SE ファイルパス
+         seFullcombo  : フルコンボ達成 SE ファイルパス
+         seAllperfect : AP 達成 SE ファイルパス
+
+         ※ 各パスを空文字にすると Web Audio 合成音を使用。
+            例: sePerfect: "data/sound/se_perfect.ogg"
     ──────────────────────────────────────────────────────── */
     window._TSR_CONFIG = {
         bpm:             120,
@@ -40,12 +51,19 @@
         musicLoop:       true,
         bgImage:         "",
         returnStorage:   "",
-        returnTarget:    "*rhythm_after"
+        returnTarget:    "*rhythm_after",
+        seVolume:        0.8,
+        sePerfect:       "",
+        seGood:          "",
+        seMiss:          "",
+        seEmpty:         "",
+        sePause:         "",
+        seResume:        "",
+        seFullcombo:     "",
+        seAllperfect:    ""
     };
 
-    /* ── chart.js を先に読み込む (ノーツ配置定義) ──────────
-       chart.js が存在しない場合は自動生成モードで動作する。
-    ──────────────────────────────────────────────────────── */
+    /* chart.js を先に読み込む */
     window._TSR_CHART = null;
     var chartReq = new XMLHttpRequest();
     chartReq.open("GET", "data/others/chart.js", false);
@@ -54,7 +72,7 @@
         eval(chartReq.responseText); // jshint ignore:line
     }
 
-    /* ── rhythm.js を読み込んで実行 ─────────────────────── */
+    /* rhythm.js を読み込んで実行 */
     var req = new XMLHttpRequest();
     req.open("GET", "data/others/rhythm.js", false);
     req.send(null);
