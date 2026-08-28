@@ -1,7 +1,6 @@
 /* =============================================================
    TyranoSimpleRhythm - 外部スタイルシート v2
    配置先: data/others/tsr-style.css
-   追加: 背景画像ディム / ポーズオーバーレイ / HUDボタン
    ============================================================= */
 
 #tsr-root {
@@ -10,32 +9,24 @@
   color: #fff; font-family: sans-serif;
   touch-action: none; user-select: none; overflow: hidden;
 }
-
-/* 背景画像が設定されたときの暗転レイヤー */
 #tsr-bg-dim {
   position: absolute; inset: 0; z-index: 0;
   background: rgba(0, 0, 0, 0.45);
   pointer-events: none;
 }
-
-/* ── HUD ── */
 #tsr-hud {
   position: absolute; z-index: 5;
   top: 16px; left: 20px; right: 20px;
   display: flex; justify-content: space-between; align-items: center;
   font-weight: 700; font-size: 18px;
-  pointer-events: none;   /* HUD全体はクリック透過 */
+  pointer-events: none;
 }
-
-/* HUD内ボタンエリア (pointer-events を戻す) */
 #tsr-hud-btns {
-  display: none;           /* ゲーム開始まで非表示 */
+  display: none;
   align-items: center;
   gap: 8px;
   pointer-events: all;
 }
-
-/* ゲーム中コントロールボタン共通 */
 .tsr-ctrl-btn {
   padding: 5px 14px;
   border: 1px solid rgba(255, 255, 255, 0.45);
@@ -47,13 +38,10 @@
   transition: background 0.15s;
 }
 .tsr-ctrl-btn:hover { background: rgba(255, 255, 255, 0.28); }
-
-/* ── プレイフィールド ── */
 #tsr-playfield {
   position: absolute; inset: 0; display: flex; margin: auto; max-width: 760px;
   border-left: 1px solid #ffffff30; border-right: 1px solid #ffffff30;
 }
-
 .tsr-lane {
   position: relative; flex: 1;
   border-right: 1px solid #ffffff25;
@@ -61,38 +49,31 @@
 }
 .tsr-lane:last-child { border-right: 0; }
 .tsr-lane.active     { background: #ffffff28; }
-
 .tsr-key {
   position: absolute; left: 8%; right: 8%; bottom: 4%; height: 44px;
   border: 2px solid #ffffff80; border-radius: 10px;
   display: flex; align-items: center; justify-content: center; font-weight: 800;
 }
-
 .tsr-note {
   position: absolute; left: 8%; right: 8%; top: 0; height: 24px;
   border-radius: 8px; box-shadow: 0 0 14px currentColor; will-change: transform;
 }
-
 #tsr-judge-line {
   position: absolute; z-index: 3; left: 0; right: 0; top: 82%; height: 3px;
   background: #fff; box-shadow: 0 0 12px #fff; pointer-events: none;
 }
-
 #tsr-judge {
   position: absolute; z-index: 6; left: 50%; top: 52%;
   transform: translate(-50%, -50%);
   font-size: 34px; font-weight: 900; opacity: 0; pointer-events: none;
 }
-
-/* ── ポーズオーバーレイ (z-index 12: リザルト10より上) ── */
 #tsr-pause-overlay {
   position: absolute; z-index: 12; inset: 0;
-  display: none;            /* pause() で flex に切り替え */
+  display: none;
   align-items: center;
   justify-content: center;
   background: rgba(5, 7, 20, 0.82);
 }
-
 #tsr-pause-panel {
   width: min(400px, 85vw);
   padding: 36px 28px;
@@ -102,20 +83,16 @@
   text-align: center;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
 }
-
 #tsr-pause-panel h2 {
   margin: 0 0 28px;
   font-size: 30px;
   letter-spacing: 6px;
 }
-
-/* ── タイトル / リザルトオーバーレイ ── */
 #tsr-overlay {
   position: absolute; z-index: 10; inset: 0;
   display: flex; align-items: center; justify-content: center;
   background: #050714b8; padding: 20px;
 }
-
 #tsr-panel {
   width: min(520px, 90vw); padding: 28px;
   border: 1px solid #ffffff42; border-radius: 18px;
@@ -123,7 +100,6 @@
 }
 #tsr-panel h2 { margin: 0 0 16px; font-size: 30px; }
 #tsr-panel p  { line-height: 1.7; }
-
 .tsr-button {
   min-width: 130px; margin: 10px 6px 0; padding: 13px 20px;
   border: 0; border-radius: 999px;

@@ -1,9 +1,11 @@
 /* =============================================================
-   TyranoSimpleRhythm - rhythm.js  v2.1
+   TyranoSimpleRhythm - rhythm.js  v3
    配置先: data/others/rhythm.js
 
-   v2.1 変更点:
-     - rhythm_fullcombo 変数を追加 (miss===0 なら 1, それ以外 0)
+   v3 変更点:
+     - makeChart() が window._TSR_CHART (chart.js) を優先使用
+     - beat 指定 / ms 指定の両対応
+     - _TSR_CHART が未定義の場合は従来の自動生成にフォールバック
    ============================================================= */
 (function () {
     "use strict";
@@ -22,8 +24,8 @@
         keyLabels:       ["D", "F", "J", "K"],
         noteColors:      ["#ff5c8a", "#56c8ff", "#ffd45c", "#9c7cff"],
         bpm:             120,
-        beatCount:       48,
-        beatsPerNote:    1,
+        beatCount:       48,   /* 自動生成モードのみ使用 */
+        beatsPerNote:    1,    /* 自動生成モードのみ使用 */
         approachMs:      1800,
         judgeYPercent:   82,
         perfectMs:       80,
@@ -63,6 +65,8 @@
     CONFIG.perfectMs    = Math.max(0,             Number(CONFIG.perfectMs)                || 80);
     CONFIG.goodMs       = Math.max(CONFIG.perfectMs, Number(CONFIG.goodMs)               || 150);
     CONFIG.missMs       = Math.max(CONFIG.goodMs, Number(CONFIG.missMs)                  || 220);
+
+    var beatMs = 60000 / CONFIG.bpm;
 
     /* ─── BGM ────────────────────────────────────────────────── */
     var audioEl = null;
@@ -128,14 +132,14 @@
     var animationId = 0, score = 0, combo = 0, maxCombo = 0;
     var perfect = 0, good = 0, miss = 0, audioCtx = null, nextClickBeat = 0;
     var judgeAnimation = null;
-    var beatMs        = 60000 / CONFIG.bpm;
-    var totalDuration = CONFIG.beatCount * beatMs;
+    var totalDuration = 0;   /* makeChart() 後に確定 */
 
     function later(fn, ms) {
         var id = window.setTimeout(function () { timeouts.delete(id); fn(); }, ms);
         timeouts.add(id); return id;
     }
 
+    /* ─── 判定 ───────────────────────────────────────────────── */
     function hitLane(index) {
         if (!running || paused || destroyed) return;
         var lane = lanes[index];
@@ -157,6 +161,7 @@
         applyJudge(target, smallest <= CONFIG.perfectMs ? "PERFECT" : "GOOD");
     }
 
+    /* ─── レーン DOM ─────────────────────────────────────────── */
     for (var i = 0; i < CONFIG.laneCount; i++) {
         (function (idx) {
             var lane   = document.createElement("div");
@@ -171,6 +176,7 @@
         }(i));
     }
 
+    /* ─── キーボード ─────────────────────────────────────────── */
     function keydown(e) {
         if (e.repeat) return;
         if (e.key === "Escape") {
@@ -183,18 +189,65 @@
     }
     window.addEventListener("keydown", keydown, { passive: false, capture: true });
 
+    /* ═══════════════════════════════════════════════════════════
+       makeChart()
+       優先順位:
+         1. window._TSR_CHART (chart.js で定義した手動配置)
+         2. 自動生成 (従来のアルゴリズム、_TSR_CHART が空の場合)
+
+       _TSR_CHART の各エントリ:
+         { lane: <number>, beat: <number> }  ← beat 指定
+         { lane: <number>, ms:   <number> }  ← ms 直接指定
+    ════════════════════════════════════════════════════════════ */
     function makeChart() {
-        var chart = [], lane = 0;
-        for (var beat = 0; beat < CONFIG.beatCount; beat += CONFIG.beatsPerNote) {
-            lane = (lane + ((Math.round(beat / CONFIG.beatsPerNote) % 7 === 6) ? 2 : 1)) % CONFIG.laneCount;
-            chart.push({ lane: lane, time: CONFIG.countdownMs + beat * beatMs });
+        var rawChart = window._TSR_CHART;
+
+        /* ── 手動配置モード ── */
+        if (rawChart && rawChart.length > 0) {
+            var chart = [];
+            for (var _i = 0; _i < rawChart.length; _i++) {
+                var entry = rawChart[_i];
+                var lane  = Math.floor(Math.abs(Number(entry.lane) || 0)) % CONFIG.laneCount;
+
+                /* beat 指定 → ms に変換。ms 直接指定はそのまま使用 */
+                var time;
+                if (entry.beat !== undefined && entry.beat !== null) {
+                    time = CONFIG.countdownMs + Number(entry.beat) * beatMs;
+                } else if (entry.ms !== undefined && entry.ms !== null) {
+                    time = CONFIG.countdownMs + Number(entry.ms);
+                } else {
+                    continue;   /* beat も ms も無いエントリはスキップ */
+                }
+
+                chart.push({ lane: lane, time: time });
+            }
+
+            /* 時刻順にソート (chart.js の記述順が前後していても正しく動く) */
+            chart.sort(function (a, b) { return a.time - b.time; });
+
+            /* totalDuration を最後のノーツ時刻から算出 */
+            if (chart.length > 0) {
+                totalDuration = chart[chart.length - 1].time - CONFIG.countdownMs + beatMs * 4;
+            }
+            return chart;
         }
-        return chart;
+
+        /* ── 自動生成モード (フォールバック) ── */
+        var autoChart = [];
+        var autoLane  = 0;
+        for (var beat = 0; beat < CONFIG.beatCount; beat += CONFIG.beatsPerNote) {
+            autoLane = (autoLane + ((Math.round(beat / CONFIG.beatsPerNote) % 7 === 6) ? 2 : 1)) % CONFIG.laneCount;
+            autoChart.push({ lane: autoLane, time: CONFIG.countdownMs + beat * beatMs });
+        }
+        totalDuration = CONFIG.beatCount * beatMs;
+        return autoChart;
     }
+
     function clearNotes() {
         for (var _i = 0; _i < notes.length; _i++) { if (notes[_i].el) notes[_i].el.remove(); }
         notes = [];
     }
+
     function createNotes() {
         clearNotes();
         var chart = makeChart();
@@ -211,6 +264,7 @@
         }
     }
 
+    /* ─── HUD / 判定表示 ─────────────────────────────────────── */
     function updateHud() { scoreEl.textContent = String(score); comboEl.textContent = String(combo); }
 
     function showJudge(text, color) {
@@ -240,6 +294,7 @@
         updateHud();
     }
 
+    /* ─── メトロノーム ───────────────────────────────────────── */
     function clickSound(strong) {
         if (!CONFIG.enableMetronome || !audioCtx || audioCtx.state === "closed") return;
         var osc  = audioCtx.createOscillator();
@@ -251,14 +306,29 @@
         osc.start(); osc.stop(audioCtx.currentTime + 0.05);
     }
 
+    /* ─── メインループ ───────────────────────────────────────── */
+    /* メトロノーム用に直近ノーツ時刻を使う */
+    var metronomeBeats = [];
+    function buildMetronomeBeats() {
+        metronomeBeats = [];
+        var beatIdx = 0;
+        while (CONFIG.countdownMs + beatIdx * beatMs < CONFIG.countdownMs + totalDuration + 500) {
+            metronomeBeats.push(CONFIG.countdownMs + beatIdx * beatMs);
+            beatIdx++;
+        }
+    }
+
     function frame() {
         if (!running || paused || destroyed) return;
         var now    = performance.now() - startTime;
         var judgeY = root.clientHeight * CONFIG.judgeYPercent / 100;
         var startY = -CONFIG.noteHeight - 10;
-        while (nextClickBeat < CONFIG.beatCount && now >= CONFIG.countdownMs + nextClickBeat * beatMs) {
-            clickSound(nextClickBeat % 4 === 0); nextClickBeat++;
+
+        while (nextClickBeat < metronomeBeats.length && now >= metronomeBeats[nextClickBeat]) {
+            clickSound(nextClickBeat % 4 === 0);
+            nextClickBeat++;
         }
+
         for (var _i = 0; _i < notes.length; _i++) {
             var note = notes[_i];
             if (note.judged) continue;
@@ -266,13 +336,15 @@
             note.el.style.transform = "translateY(" + (startY + (judgeY - startY) * progress) + "px)";
             if (now - note.time > CONFIG.missMs) applyJudge(note, "MISS");
         }
+
         if (now > CONFIG.countdownMs + totalDuration + CONFIG.missMs + 500) { finish(); return; }
         animationId = requestAnimationFrame(frame);
     }
 
+    /* ─── ポーズ ─────────────────────────────────────────────── */
     function doPause() {
         if (!running || paused || destroyed) return;
-        paused   = true; pausedAt = performance.now();
+        paused = true; pausedAt = performance.now();
         cancelAnimationFrame(animationId);
         pauseMusic();
         pauseOverlay.style.display = "flex";
@@ -286,13 +358,18 @@
         animationId = requestAnimationFrame(frame);
     }
 
+    /* ─── ゲーム開始 ─────────────────────────────────────────── */
     function start() {
         if (running || destroyed) return;
         var AC = window.AudioContext || window.webkitAudioContext;
         if (CONFIG.enableMetronome && AC && (!audioCtx || audioCtx.state === "closed")) audioCtx = new AC();
         if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(function () {});
+
         score = combo = maxCombo = perfect = good = miss = nextClickBeat = 0;
-        updateHud(); createNotes();
+        updateHud();
+        createNotes();           /* makeChart() → totalDuration も確定 */
+        buildMetronomeBeats();   /* totalDuration 確定後に呼ぶ */
+
         overlay.style.display      = "none";
         pauseOverlay.style.display = "none";
         hudBtns.style.display      = "flex";
@@ -301,20 +378,7 @@
         animationId = requestAnimationFrame(frame);
     }
 
-    /* ═══════════════════════════════════════════════════════════
-       saveResult: シナリオ分岐に使える変数を kag.stat.f に保存
-
-       保存される変数一覧:
-         f.rhythm_score      … 合計スコア (数値)
-         f.rhythm_rate       … 達成率 0〜100 (数値)
-         f.rhythm_max_combo  … 最大コンボ数 (数値)
-         f.rhythm_perfect    … PERFECT 判定数 (数値)
-         f.rhythm_good       … GOOD 判定数 (数値)
-         f.rhythm_miss       … MISS 判定数 (数値)
-         f.rhythm_fullcombo  … フルコンボ: 1=達成 / 0=未達成
-         f.rhythm_allperfect … オールパーフェクト: 1=達成 / 0=未達成
-                                (PERFECT のみで miss=0, good=0)
-    ════════════════════════════════════════════════════════════ */
+    /* ─── 結果保存 ───────────────────────────────────────────── */
     function saveResult(rate) {
         var vars = kag.stat.f || kag.stat.fvars || (kag.variable && kag.variable.f);
         if (!vars) return;
@@ -328,6 +392,7 @@
         vars.rhythm_allperfect = (miss === 0 && good === 0) ? 1 : 0;
     }
 
+    /* ─── リザルト表示 ───────────────────────────────────────── */
     function finish() {
         if (!running) return;
         running = false; paused = false;
@@ -335,11 +400,11 @@
         stopMusic();
         hudBtns.style.display      = "none";
         pauseOverlay.style.display = "none";
+
         var maxScore = notes.length * CONFIG.scorePerfect;
         var rate     = maxScore ? Math.round(score / maxScore * 100) : 0;
         saveResult(rate);
 
-        /* リザルトにフルコンボ / オールパーフェクトを表示 */
         var bonusText = "";
         if (miss === 0 && good === 0) bonusText = "<br><b style=\"color:#ffe66d\">ALL PERFECT!!</b>";
         else if (miss === 0)          bonusText = "<br><b style=\"color:#65d8ff\">FULL COMBO!</b>";
@@ -356,6 +421,7 @@
         root.querySelector("#tsr-close").onclick = returnToScenario;
     }
 
+    /* ─── クリーンアップ ─────────────────────────────────────── */
     function cleanup() {
         running = false; paused = false;
         cancelAnimationFrame(animationId);
@@ -405,6 +471,7 @@
         destroy({ resume: true });
     }
 
+    /* ─── ボタンイベント ─────────────────────────────────────── */
     root.querySelector("#tsr-pause-btn").onclick  = doPause;
     root.querySelector("#tsr-resume-btn").onclick = doResume;
     root.querySelector("#tsr-quit-btn").onclick   = function () {
@@ -412,6 +479,7 @@
         paused = false; pauseOverlay.style.display = "none"; finish();
     };
 
+    /* ─── タイトル画面 ───────────────────────────────────────── */
     var labelText = CONFIG.keyLabels.slice(0, CONFIG.laneCount).join(" / ");
     panel.innerHTML =
         "<h2>RHYTHM GAME</h2>" +
