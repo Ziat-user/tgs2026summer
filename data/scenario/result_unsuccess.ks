@@ -40,5 +40,6 @@
 捕まえろー！[p]
 [_tb_end_text]
 
+[stopbgm  time="1000"  ]
 [chara_hide  name="ちょうろう"  time="1000"  wait="true"  pos_mode="true"  ]
 [jump  storage="title_screen.ks"  target=""  ]
